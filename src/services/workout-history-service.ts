@@ -18,6 +18,7 @@ export interface WorkoutSetHistoryItem {
 
 export interface WorkoutExerciseHistoryItem {
   id: string;
+  exerciseId: string;
   name: string;
   category: string;
   weightUnit: "total" | "per-hand";
@@ -51,6 +52,7 @@ function mapExerciseHistory(
 
   return {
     id: exercise.id,
+    exerciseId: exercise.exerciseId,
     name: exercise.exerciseSnapshot.name,
     category: exercise.exerciseSnapshot.category,
     weightUnit: exercise.exerciseSnapshot.weightUnit,

@@ -11,7 +11,6 @@ import {
   loadWorkoutDraft,
   loadWorkoutRecordingData,
   saveWorkoutRecording,
-  saveWorkoutDraft,
 } from "@/services/workout-recording-service";
 import type { Exercise, Workout, WorkoutDraft, WorkoutExercise, WorkoutSet } from "@/types";
 import { prioritizeRecentlyUsedExercises, searchExercises } from "@/utils";
@@ -19,6 +18,7 @@ import { prioritizeRecentlyUsedExercises, searchExercises } from "@/utils";
 const DEFAULT_BODY_WEIGHT_VALUES = Array.from({ length: 341 }, (_, index) =>
   30 + index * 0.5,
 );
+const inMemoryWorkoutDrafts = new Map<string, WorkoutDraft>();
 
 function roundToHalfKilogram(weight: number): number {
   return Math.round(weight * 2) / 2;
@@ -85,7 +85,8 @@ export function RecordingScreen() {
   const [bodyWeight, setBodyWeight] = useState(30);
   const [hasPreviousBodyWeight, setHasPreviousBodyWeight] = useState(false);
   const [isBodyWeightModalOpen, setIsBodyWeightModalOpen] = useState(false);
-  const [previousWorkout, setPreviousWorkout] = useState<Workout>();
+  const [isPastWorkoutModalOpen, setIsPastWorkoutModalOpen] = useState(false);
+  const [selectedPastWorkoutIndex, setSelectedPastWorkoutIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [draftReadyDate, setDraftReadyDate] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -103,10 +104,8 @@ export function RecordingScreen() {
         .sort((a, b) => a - b),
     [bodyWeight],
   );
-  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const shouldPersistDraftRef = useRef(false);
   const draftSnapshotRef = useRef<WorkoutDraft | undefined>(undefined);
-  const flushDraftRef = useRef<() => void>(() => undefined);
 
   draftSnapshotRef.current = {
     date,
@@ -115,11 +114,6 @@ export function RecordingScreen() {
     bodyWeight,
   };
   shouldPersistDraftRef.current = isDirty && draftReadyDate === date;
-  flushDraftRef.current = () => {
-    if (shouldPersistDraftRef.current && draftSnapshotRef.current) {
-      saveWorkoutDraft(draftSnapshotRef.current);
-    }
-  };
 
   useEffect(() => {
     let active = true;
@@ -130,7 +124,8 @@ export function RecordingScreen() {
     loadWorkoutRecordingData(date)
       .then((data) => {
         if (!active) return;
-        const draft = loadWorkoutDraft();
+        const draft =
+          inMemoryWorkoutDrafts.get(date) ?? loadWorkoutDraft();
         const matchingDraft = draft?.date === date ? draft : undefined;
         const loadedWorkoutExercises =
           matchingDraft?.exercises ?? data.workoutForDate?.exercises ?? [];
@@ -158,17 +153,6 @@ export function RecordingScreen() {
         );
         setHasPreviousBodyWeight(latestBodyWeight !== undefined);
 
-        const previousDate = data.workouts
-          .filter((workout) => workout.date < date)
-          .reduce<string | undefined>(
-            (latest, workout) => (!latest || workout.date > latest ? workout.date : latest),
-            undefined,
-          );
-        setPreviousWorkout(
-          previousDate
-            ? data.workouts.find((workout) => workout.date === previousDate)
-            : undefined,
-        );
         setDraftReadyDate(date);
       })
       .catch((cause: unknown) => {
@@ -186,64 +170,25 @@ export function RecordingScreen() {
     };
   }, [date]);
 
-  useEffect(() => {
-    if (!isDirty || draftReadyDate !== date) return;
-    const timer = setTimeout(() => {
-      try {
-        flushDraftRef.current();
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "入力途中の記録を保存できませんでした。");
-      }
-    }, 200);
-    draftTimerRef.current = timer;
-    return () => {
-      clearTimeout(timer);
-      if (draftTimerRef.current === timer) draftTimerRef.current = undefined;
-    };
-  }, [bodyWeight, date, draftReadyDate, isDirty, workoutExercises, workoutId]);
-
-  useEffect(() => {
-    function flushDraft() {
-      try {
-        flushDraftRef.current();
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "入力途中の記録を保存できませんでした。");
-      }
-    }
-    function handleVisibilityChange() {
-      if (document.visibilityState === "hidden") flushDraft();
-    }
-
-    window.addEventListener("beforeunload", flushDraft);
-    window.addEventListener("pagehide", flushDraft);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      window.removeEventListener("beforeunload", flushDraft);
-      window.removeEventListener("pagehide", flushDraft);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, []);
-
   useEffect(
     () => () => {
       if (!shouldPersistDraftRef.current || !draftSnapshotRef.current) return;
-      try {
-        saveWorkoutDraft(draftSnapshotRef.current);
-      } catch (cause) {
-        console.error("IronLog could not persist the workout draft on unmount.", cause);
-      }
+      inMemoryWorkoutDrafts.set(
+        draftSnapshotRef.current.date,
+        draftSnapshotRef.current,
+      );
     },
     [],
   );
 
   useEffect(() => {
-    if (!isExercisePickerOpen && !isBodyWeightModalOpen) return;
+    if (!isExercisePickerOpen && !isBodyWeightModalOpen && !isPastWorkoutModalOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [isBodyWeightModalOpen, isExercisePickerOpen]);
+  }, [isBodyWeightModalOpen, isExercisePickerOpen, isPastWorkoutModalOpen]);
 
   const recentExercises = useMemo(
     () => prioritizeRecentlyUsedExercises(exercises, workouts.filter((workout) => workout.date <= date)),
@@ -254,6 +199,13 @@ export function RecordingScreen() {
     [recentExercises, searchQuery],
   );
   const workoutExerciseIds = new Set(workoutExercises.map((item) => item.exerciseId));
+  const pastWorkouts = useMemo(
+    () => workouts
+      .filter((workout) => workout.date < date)
+      .sort((a, b) => b.date.localeCompare(a.date)),
+    [date, workouts],
+  );
+  const selectedPastWorkout = pastWorkouts[selectedPastWorkoutIndex];
 
   function previousExercise(exerciseId: string): WorkoutExercise | undefined {
     return workouts
@@ -273,21 +225,25 @@ export function RecordingScreen() {
     setNotice(undefined);
   }
 
-  function handleLoadPreviousWorkout() {
-    if (!previousWorkout) return;
-    if (
-      workoutExercises.length > 0 &&
-      !window.confirm("現在の種目とセットを前回のトレーニング内容で置き換えますか？")
-    ) {
+  function openPastWorkoutModal() {
+    if (pastWorkouts.length === 0) return;
+    setSelectedPastWorkoutIndex(0);
+    setIsPastWorkoutModalOpen(true);
+  }
+
+  function handleLoadPastWorkout() {
+    if (!selectedPastWorkout) return;
+    if (!window.confirm("この内容で置き換えますか？")) {
       return;
     }
 
-    const copiedExercises = previousWorkout.exercises.map(duplicateWorkoutExercise);
+    const copiedExercises = selectedPastWorkout.exercises.map(duplicateWorkoutExercise);
     setWorkoutExercises(copiedExercises);
     setSelectedExerciseId(copiedExercises[0]?.exerciseId ?? "");
     setIsDirty(true);
     setError(undefined);
-    setNotice("前回トレーニングを読み込みました。保存はまだ行われていません。");
+    setNotice("過去トレーニングを読み込みました。保存はまだ行われていません。");
+    setIsPastWorkoutModalOpen(false);
   }
 
   function adjustSet(
@@ -345,10 +301,6 @@ export function RecordingScreen() {
   }
 
   async function handleSave(): Promise<boolean> {
-    if (draftTimerRef.current !== undefined) {
-      clearTimeout(draftTimerRef.current);
-      draftTimerRef.current = undefined;
-    }
     setIsSaving(true);
     setError(undefined);
     setNotice(undefined);
@@ -356,6 +308,7 @@ export function RecordingScreen() {
       if (workoutExercises.length === 0) {
         await saveWorkoutRecording(undefined, bodyWeight, date, workoutId);
         shouldPersistDraftRef.current = false;
+        inMemoryWorkoutDrafts.delete(date);
         setWorkoutId(undefined);
         setNotice(workoutId ? "トレーニングを削除し、体重を保存しました" : "体重を保存しました");
         setIsDirty(false);
@@ -371,6 +324,7 @@ export function RecordingScreen() {
       };
       await saveWorkoutRecording(workout, bodyWeight, date);
       shouldPersistDraftRef.current = false;
+      inMemoryWorkoutDrafts.delete(date);
       setWorkoutId(workout.id);
       setIsDirty(false);
       setNotice("トレーニングを保存しました");
@@ -379,15 +333,7 @@ export function RecordingScreen() {
       setWorkouts(data.workouts);
       return true;
     } catch (cause) {
-      let message = cause instanceof Error ? cause.message : "保存できませんでした。";
-      try {
-        flushDraftRef.current();
-      } catch (draftCause) {
-        const draftMessage =
-          draftCause instanceof Error ? draftCause.message : "入力途中の記録を保存できませんでした。";
-        message = `${message} ${draftMessage}`;
-      }
-      setError(message);
+      setError(cause instanceof Error ? cause.message : "保存できませんでした。");
       return false;
     } finally {
       setIsSaving(false);
@@ -402,6 +348,7 @@ export function RecordingScreen() {
     try {
       await deleteWorkoutRecording(workoutId);
       shouldPersistDraftRef.current = false;
+      inMemoryWorkoutDrafts.delete(date);
       setWorkoutId(undefined);
       setWorkoutExercises([]);
       setIsDirty(false);
@@ -444,16 +391,13 @@ export function RecordingScreen() {
             ) {
               return;
             }
-            if (draftTimerRef.current !== undefined) {
-              clearTimeout(draftTimerRef.current);
-              draftTimerRef.current = undefined;
-            }
             try {
               clearWorkoutDraft();
             } catch (cause) {
               setError(cause instanceof Error ? cause.message : "入力途中の記録を削除できませんでした。");
               return;
             }
+            inMemoryWorkoutDrafts.delete(date);
             shouldPersistDraftRef.current = false;
             setIsDirty(false);
             setDate(nextDate);
@@ -470,15 +414,28 @@ export function RecordingScreen() {
           <p className="eyebrow">YOUR SESSION</p>
           <h2>種目とセット</h2>
         </div>
+        <span className={`save-state${isDirty ? " is-dirty" : ""}`} role="status">
+          {isDirty ? "💾 保存する" : "✅ 保存済み"}
+        </span>
+      </section>
+      <div className="record-actions">
         <button
           className="load-previous-button"
           type="button"
-          disabled={!previousWorkout || isLoading || isSaving}
-          onClick={handleLoadPreviousWorkout}
+          disabled={pastWorkouts.length === 0 || isLoading || isSaving}
+          onClick={openPastWorkoutModal}
         >
-          前回トレーニングを読込
+          過去トレーニングを読み込み
         </button>
-      </section>
+        <button
+          className="add-exercise-action"
+          type="button"
+          disabled={isLoading || isSaving}
+          onClick={() => setIsExercisePickerOpen(true)}
+        >
+          ＋ 種目を追加
+        </button>
+      </div>
 
       {isLoading ? (
         <div className="loading-card">記録を読み込んでいます…</div>
@@ -629,25 +586,6 @@ export function RecordingScreen() {
         </>
       )}
 
-      {!isLoading && (
-        <button
-          className="add-exercise-button"
-          type="button"
-          onClick={() => setIsExercisePickerOpen(true)}
-        >
-          <span className="add-exercise-icon">＋</span>
-          <span><strong>種目を追加</strong><small>最近使った種目・検索・新規作成</small></span>
-          <span className="chevron">›</span>
-        </button>
-      )}
-
-      {previousWorkout && (
-        <section className="previous-session">
-          <p className="eyebrow">PREVIOUS SESSION · {previousWorkout.date}</p>
-          <p>{previousWorkout.exercises.map((item) => item.exerciseSnapshot.name).join(" ・ ")}</p>
-        </section>
-      )}
-
       <div className="save-bar">
         <button
           className="bodyweight-input-button"
@@ -740,14 +678,83 @@ export function RecordingScreen() {
               <button
                 className="bodyweight-save-button"
                 type="button"
-                disabled={isSaving}
-                onClick={async () => {
-                  if (await handleSave()) setIsBodyWeightModalOpen(false);
-                }}
+                onClick={() => setIsBodyWeightModalOpen(false)}
               >
-                保存
+                入力を反映
               </button>
             </div>
+          </section>
+        </div>
+      )}
+
+      {isPastWorkoutModalOpen && selectedPastWorkout && (
+        <div
+          className="sheet-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setIsPastWorkoutModalOpen(false);
+          }}
+        >
+          <section
+            className="past-workout-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="past-workout-title"
+          >
+            <div className="sheet-handle" />
+            <div className="sheet-heading">
+              <div>
+                <p className="eyebrow">PAST TRAINING</p>
+                <h2 id="past-workout-title">過去トレーニングを読み込み</h2>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="閉じる"
+                onClick={() => setIsPastWorkoutModalOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="past-workout-navigation">
+              <button
+                type="button"
+                aria-label="より古いトレーニング"
+                disabled={selectedPastWorkoutIndex >= pastWorkouts.length - 1}
+                onClick={() => setSelectedPastWorkoutIndex((index) => index + 1)}
+              >
+                ＜
+              </button>
+              <strong>{selectedPastWorkout.date.replaceAll("-", "/")}</strong>
+              <button
+                type="button"
+                aria-label="より新しいトレーニング"
+                disabled={selectedPastWorkoutIndex === 0}
+                onClick={() => setSelectedPastWorkoutIndex((index) => index - 1)}
+              >
+                ＞
+              </button>
+            </div>
+            <div className="past-workout-exercises">
+              {selectedPastWorkout.exercises.map((item) => (
+                <article className="past-workout-exercise" key={item.id}>
+                  <strong>{item.exerciseSnapshot.name}</strong>
+                  <span>
+                    {item.sets
+                      .map((set) => `${set.externalWeight}×${set.reps}`)
+                      .join("　")}
+                  </span>
+                </article>
+              ))}
+            </div>
+            <button
+              className="past-workout-apply"
+              type="button"
+              disabled={isSaving}
+              onClick={handleLoadPastWorkout}
+            >
+              この内容を読み込む
+            </button>
           </section>
         </div>
       )}
@@ -854,7 +861,6 @@ export function RecordingScreen() {
       )}
       <BottomNavigation
         active="record"
-        onNavigate={async () => (isDirty ? handleSave() : true)}
       />
     </main>
   );

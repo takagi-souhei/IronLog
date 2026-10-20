@@ -109,7 +109,7 @@ function TrainingDayRecord({
     );
   }
 
-  const exercise = day.exercises.find((item) => item.id === selectedTab);
+  const exercise = day.exercises.find((item) => item.exerciseId === selectedTab);
   if (!exercise) {
     return (
       <p className="review-no-workout">
@@ -160,7 +160,14 @@ export function HistoryScreen() {
     };
   }, []);
 
-  const exerciseTabs = data.history[0]?.exercises ?? [];
+  const exerciseTabs = useMemo(() => {
+    const latestExerciseIds = new Set(
+      data.history[0]?.exercises.map((exercise) => exercise.exerciseId) ?? [],
+    );
+    return data.graphData.exercises.filter((exercise) =>
+      latestExerciseIds.has(exercise.id),
+    );
+  }, [data.graphData.exercises, data.history]);
   const selectedExercise = exerciseTabs.find((exercise) => exercise.id === selectedTab);
   const sourcePoints = useMemo<ProgressChartPoint[]>(
     () =>
