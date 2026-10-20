@@ -24,7 +24,7 @@ const REP_VALUES = Array.from(
   { length: WORKOUT_SET_LIMITS.maxReps - WORKOUT_SET_LIMITS.minReps + 1 },
   (_, index) => index + WORKOUT_SET_LIMITS.minReps,
 );
-const BODY_WEIGHT_VALUES = Array.from({ length: 341 }, (_, index) =>
+const DEFAULT_BODY_WEIGHT_VALUES = Array.from({ length: 341 }, (_, index) =>
   30 + index * 0.5,
 );
 
@@ -74,13 +74,23 @@ function createEmptySet(previousSet?: WorkoutSet): WorkoutSet {
   };
 }
 
+function duplicateWorkoutExercise(exercise: WorkoutExercise): WorkoutExercise {
+  return {
+    ...exercise,
+    id: createId(),
+    exerciseSnapshot: { ...exercise.exerciseSnapshot },
+    sets: exercise.sets.map((set) => ({ ...set, id: createId() })),
+  };
+}
+
 export function RecordingScreen() {
   const [date, setDate] = useState(localDateString);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [workoutId, setWorkoutId] = useState<string>();
   const [workoutExercises, setWorkoutExercises] = useState<WorkoutExercise[]>([]);
-  const [bodyWeight, setBodyWeight] = useState(60);
+  const [selectedExerciseId, setSelectedExerciseId] = useState("");
+  const [bodyWeight, setBodyWeight] = useState(30);
   const [hasPreviousBodyWeight, setHasPreviousBodyWeight] = useState(false);
   const [previousWorkout, setPreviousWorkout] = useState<Workout>();
   const [isLoading, setIsLoading] = useState(true);
@@ -94,6 +104,12 @@ export function RecordingScreen() {
   const [isAddingExercise, setIsAddingExercise] = useState(false);
   const [newExerciseName, setNewExerciseName] = useState("");
   const [newExerciseCategory, setNewExerciseCategory] = useState("胸");
+  const bodyWeightValues = useMemo(
+    () =>
+      [...new Set([...DEFAULT_BODY_WEIGHT_VALUES, roundToHalfKilogram(bodyWeight)])]
+        .sort((a, b) => a - b),
+    [bodyWeight],
+  );
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const shouldPersistDraftRef = useRef(false);
   const draftSnapshotRef = useRef<WorkoutDraft | undefined>(undefined);
@@ -123,23 +139,31 @@ export function RecordingScreen() {
         if (!active) return;
         const draft = loadWorkoutDraft();
         const matchingDraft = draft?.date === date ? draft : undefined;
+        const loadedWorkoutExercises =
+          matchingDraft?.exercises ?? data.workoutForDate?.exercises ?? [];
         setExercises(data.exercises);
         setWorkouts(data.workouts);
         setWorkoutId(matchingDraft?.workoutId ?? data.workoutForDate?.id);
-        setWorkoutExercises(
-          matchingDraft?.exercises ?? data.workoutForDate?.exercises ?? [],
-        );
+        setWorkoutExercises(loadedWorkoutExercises);
+        setSelectedExerciseId(loadedWorkoutExercises[0]?.exerciseId ?? "");
         setIsDirty(matchingDraft !== undefined);
         const savedWeight = data.bodyWeightRecords.find((record) => record.date === date);
+        const latestBodyWeight = data.bodyWeightRecords.reduce<
+          (typeof data.bodyWeightRecords)[number] | undefined
+        >(
+          (latest, record) =>
+            !latest || record.date > latest.date ? record : latest,
+          undefined,
+        );
         setBodyWeight(
           roundToHalfKilogram(
             matchingDraft?.bodyWeight ??
+              latestBodyWeight?.weight ??
               savedWeight?.weight ??
-              data.previousBodyWeight?.weight ??
-              60,
+              30,
           ),
         );
-        setHasPreviousBodyWeight(data.previousBodyWeight !== undefined);
+        setHasPreviousBodyWeight(latestBodyWeight !== undefined);
 
         const previousDate = data.workouts
           .filter((workout) => workout.date < date)
@@ -249,10 +273,28 @@ export function RecordingScreen() {
   function addExerciseToWorkout(exercise: Exercise) {
     const previous = previousExercise(exercise.id);
     setWorkoutExercises((current) => [...current, createWorkoutExercise(exercise, previous)]);
+    setSelectedExerciseId(exercise.id);
     setIsDirty(true);
     setIsExercisePickerOpen(false);
     setSearchQuery("");
     setNotice(undefined);
+  }
+
+  function handleLoadPreviousWorkout() {
+    if (!previousWorkout) return;
+    if (
+      workoutExercises.length > 0 &&
+      !window.confirm("現在の種目とセットを前回のトレーニング内容で置き換えますか？")
+    ) {
+      return;
+    }
+
+    const copiedExercises = previousWorkout.exercises.map(duplicateWorkoutExercise);
+    setWorkoutExercises(copiedExercises);
+    setSelectedExerciseId(copiedExercises[0]?.exerciseId ?? "");
+    setIsDirty(true);
+    setError(undefined);
+    setNotice("前回トレーニングを読み込みました。保存はまだ行われていません。");
   }
 
   function updateSet(
@@ -417,18 +459,19 @@ export function RecordingScreen() {
       {error && <p className="feedback feedback-error" role="alert">{error}</p>}
       {notice && <p className="feedback feedback-success" role="status">{notice}</p>}
 
-      <section className="panel bodyweight-panel">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">BODY WEIGHT</p>
-            <h2>体重</h2>
-          </div>
-          <span className="unit-pill">kg</span>
-        </div>
+      <details className="panel bodyweight-panel bodyweight-disclosure">
+        <summary className="bodyweight-summary">
+          <span>
+            <span className="eyebrow">BODY WEIGHT</span>
+            <strong>体重 {bodyWeight} kg</strong>
+          </span>
+          <span className="bodyweight-summary-action">変更</span>
+        </summary>
         <WheelPicker
           label="体重"
           value={bodyWeight}
-          values={BODY_WEIGHT_VALUES}
+          values={bodyWeightValues}
+          compact
           formatValue={(value) => `${value} kg`}
           onChange={(value) => {
             setBodyWeight(value);
@@ -437,24 +480,52 @@ export function RecordingScreen() {
         />
         <p className="helper-text">
           {hasPreviousBodyWeight
-            ? "前回記録した体重を表示しています"
-            : "前回体重がないため、60 kgを初期値にしています"}
+            ? "最新の体重記録を初期表示しています"
+            : "体重記録がないため、30 kgを初期値にしています"}
         </p>
-      </section>
+      </details>
 
       <section className="section-title-row">
         <div>
           <p className="eyebrow">YOUR SESSION</p>
           <h2>種目とセット</h2>
         </div>
-        <span className="count-pill">{workoutExercises.length} 種目</span>
+        <button
+          className="load-previous-button"
+          type="button"
+          disabled={!previousWorkout || isLoading || isSaving}
+          onClick={handleLoadPreviousWorkout}
+        >
+          前回トレーニングを読込
+        </button>
       </section>
 
       {isLoading ? (
         <div className="loading-card">記録を読み込んでいます…</div>
       ) : (
-        <div className="exercise-stack">
-          {workoutExercises.map((item) => {
+        <>
+          <div className="exercise-tabs" role="tablist" aria-label="記録する種目">
+            {workoutExercises.map((item) => (
+              <button
+                className={`exercise-tab${selectedExerciseId === item.exerciseId ? " is-selected" : ""}`}
+                id={`record-exercise-tab-${item.exerciseId}`}
+                type="button"
+                role="tab"
+                aria-selected={selectedExerciseId === item.exerciseId}
+                key={item.id}
+                onClick={() => setSelectedExerciseId(item.exerciseId)}
+              >
+                {item.exerciseSnapshot.name}
+              </button>
+            ))}
+            {workoutExercises.length === 0 && (
+              <p className="exercise-tabs-empty">種目を追加して記録を始めましょう</p>
+            )}
+          </div>
+          <div className="exercise-stack">
+          {workoutExercises
+            .filter((item) => item.exerciseId === selectedExerciseId)
+            .map((item) => {
             const previous = previousExercise(item.exerciseId);
             return (
               <article className="exercise-card" key={item.id}>
@@ -472,7 +543,16 @@ export function RecordingScreen() {
                     aria-label={`${item.exerciseSnapshot.name}を削除`}
                     onClick={() => {
                       setIsDirty(true);
-                      setWorkoutExercises((current) => current.filter((entry) => entry.id !== item.id))
+                      setWorkoutExercises((current) =>
+                        current.filter((entry) => entry.id !== item.id),
+                      );
+                      if (selectedExerciseId === item.exerciseId) {
+                        setSelectedExerciseId(
+                          workoutExercises.find(
+                            (entry) => entry.id !== item.id,
+                          )?.exerciseId ?? "",
+                        );
+                      }
                     }}
                   >
                     ×
@@ -499,6 +579,8 @@ export function RecordingScreen() {
                         ariaLabel={`${item.exerciseSnapshot.name} セット${index + 1} 重量`}
                         value={set.externalWeight}
                         values={WEIGHT_VALUES}
+                        compact
+                        quickSteps={[5, 10]}
                         formatValue={(value) => `${value.toFixed(1)} kg`}
                         onChange={(externalWeight) =>
                           updateSet(item.id, set.id, { externalWeight })
@@ -510,6 +592,8 @@ export function RecordingScreen() {
                         ariaLabel={`${item.exerciseSnapshot.name} セット${index + 1} 回数`}
                         value={set.reps}
                         values={REP_VALUES}
+                        compact
+                        quickSteps={[5, 10]}
                         formatValue={(value) => `${value} 回`}
                         onChange={(reps) => updateSet(item.id, set.id, { reps })}
                       />
@@ -555,7 +639,8 @@ export function RecordingScreen() {
               </article>
             );
           })}
-        </div>
+          </div>
+        </>
       )}
 
       {!isLoading && (

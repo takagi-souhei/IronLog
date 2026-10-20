@@ -1,5 +1,5 @@
-const CACHE_NAME = "ironlog-pwa-v1";
-const APP_SHELL = ["/", "/history", "/graphs", "/settings"];
+const CACHE_NAME = "ironlog-pwa-v2";
+const APP_SHELL = ["/", "/history", "/settings"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

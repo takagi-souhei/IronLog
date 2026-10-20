@@ -143,11 +143,11 @@ export function buildWorkoutGraphData(
   return { exercises: options, pointsByExercise: serializedPoints };
 }
 
-export function filterGraphPoints(
-  points: readonly ExerciseGraphPoint[],
+export function filterGraphPoints<T extends { date: string }>(
+  points: readonly T[],
   period: GraphPeriod,
   now = new Date(),
-): ExerciseGraphPoint[] {
+): T[] {
   if (period === "all") return [...points];
 
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());

@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef } from "react";
 
-const ROW_HEIGHT = 44;
-const VISIBLE_ROWS = 11;
-const OVERSCAN_ROWS = 4;
+const STANDARD_ROW_HEIGHT = 44;
+const STANDARD_VISIBLE_ROWS = 11;
+const STANDARD_OVERSCAN_ROWS = 4;
+const COMPACT_ROW_HEIGHT = 16;
+const COMPACT_VISIBLE_ROWS = 3;
+const COMPACT_OVERSCAN_ROWS = 2;
 
 interface WheelPickerProps {
   label: string;
@@ -12,6 +15,8 @@ interface WheelPickerProps {
   values: readonly number[];
   formatValue?: (value: number) => string;
   ariaLabel?: string;
+  compact?: boolean;
+  quickSteps?: readonly number[];
   onChange: (value: number) => void;
 }
 
@@ -21,37 +26,38 @@ export function WheelPicker({
   values,
   formatValue = String,
   ariaLabel = label,
+  compact = false,
+  quickSteps = [],
   onChange,
 }: WheelPickerProps) {
+  const rowHeight = compact ? COMPACT_ROW_HEIGHT : STANDARD_ROW_HEIGHT;
+  const visibleRows = compact ? COMPACT_VISIBLE_ROWS : STANDARD_VISIBLE_ROWS;
+  const overscanRows = compact ? COMPACT_OVERSCAN_ROWS : STANDARD_OVERSCAN_ROWS;
+  const centerOffset = Math.floor(visibleRows / 2);
   const pickerId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
-  const exactIndex = values.findIndex((option) => Math.abs(option - value) < 0.000001);
-  const selectedIndex = exactIndex === -1 ? 0 : exactIndex;
-  const [firstVisibleIndex, setFirstVisibleIndex] = useState(() =>
-    Math.min(
-      Math.max(0, values.length - VISIBLE_ROWS),
-      Math.max(0, selectedIndex - OVERSCAN_ROWS),
-    ),
+  const selectedIndex = values.reduce(
+    (closestIndex, option, index) =>
+      Math.abs(option - value) < Math.abs(values[closestIndex] - value)
+        ? index
+        : closestIndex,
+    0,
+  );
+  const firstVisibleIndex = Math.min(
+    Math.max(0, values.length - visibleRows),
+    Math.max(0, selectedIndex - overscanRows),
   );
   const lastReportedIndex = useRef(selectedIndex);
-  const initialized = useRef(false);
   const isScrolling = useRef(false);
   const scrollTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const container = containerRef.current;
-    if (container && (!initialized.current || !isScrolling.current)) {
-      setFirstVisibleIndex(
-        Math.min(
-          Math.max(0, values.length - VISIBLE_ROWS),
-          Math.max(0, selectedIndex - OVERSCAN_ROWS),
-        ),
-      );
-      container.scrollTop = selectedIndex * ROW_HEIGHT;
+    if (container && !isScrolling.current) {
+      container.scrollTop = selectedIndex * rowHeight;
       lastReportedIndex.current = selectedIndex;
-      initialized.current = true;
     }
-  }, [selectedIndex, values.length]);
+  }, [rowHeight, selectedIndex, isScrolling]);
 
   useEffect(
     () => () => {
@@ -71,19 +77,8 @@ export function WheelPicker({
     }, 120);
     const nextIndex = Math.min(
       values.length - 1,
-      Math.max(0, Math.round(container.scrollTop / ROW_HEIGHT)),
+      Math.max(0, Math.round(container.scrollTop / rowHeight)),
     );
-    if (
-      nextIndex < firstVisibleIndex + OVERSCAN_ROWS ||
-      nextIndex >= firstVisibleIndex + VISIBLE_ROWS - OVERSCAN_ROWS
-    ) {
-      setFirstVisibleIndex(
-        Math.min(
-          Math.max(0, values.length - VISIBLE_ROWS),
-          Math.max(0, nextIndex - OVERSCAN_ROWS),
-        ),
-      );
-    }
     if (nextIndex !== lastReportedIndex.current) {
       lastReportedIndex.current = nextIndex;
       onChange(values[nextIndex]);
@@ -93,32 +88,61 @@ export function WheelPicker({
   function selectIndex(index: number) {
     const container = containerRef.current;
     if (!container) return;
-    setFirstVisibleIndex(
-      Math.min(
-        Math.max(0, values.length - VISIBLE_ROWS),
-        Math.max(0, index - OVERSCAN_ROWS),
-      ),
-    );
     isScrolling.current = true;
     if (scrollTimeout.current !== undefined) clearTimeout(scrollTimeout.current);
     scrollTimeout.current = setTimeout(() => {
       isScrolling.current = false;
     }, 200);
-    container.scrollTo({ top: index * ROW_HEIGHT, behavior: "smooth" });
+    container.scrollTo({ top: index * rowHeight, behavior: "smooth" });
     onChange(values[index]);
   }
 
-  const endVisibleIndex = Math.min(values.length, firstVisibleIndex + VISIBLE_ROWS);
+  function stepBy(amount: number) {
+    selectIndex(
+      Math.min(values.length - 1, Math.max(0, selectedIndex + amount)),
+    );
+  }
+
+  const endVisibleIndex = Math.min(values.length, firstVisibleIndex + visibleRows);
   const visibleValues = values.slice(firstVisibleIndex, endVisibleIndex);
 
   return (
-    <div className="wheel-field">
-      <div className="wheel-label">{label}</div>
-      <div className="wheel-shell">
-        <div className="wheel-highlight" aria-hidden="true" />
+    <div className={`wheel-field${compact ? " is-compact" : ""}`}>
+      <div className="wheel-label-row">
+        <div className="wheel-label">{label}</div>
+        {quickSteps.length > 0 && (
+          <div className="wheel-step-controls" aria-label={`${label}を素早く変更`}>
+            {quickSteps.map((step) => (
+              <button
+                type="button"
+                key={`decrease-${step}`}
+                aria-label={`${label}を${step}減らす`}
+                onClick={() => stepBy(-step)}
+              >
+                −{step}
+              </button>
+            ))}
+            {quickSteps.map((step) => (
+              <button
+                type="button"
+                key={`increase-${step}`}
+                aria-label={`${label}を${step}増やす`}
+                onClick={() => stepBy(step)}
+              >
+                +{step}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className={`wheel-shell${compact ? " is-compact" : ""}`}>
+        <div
+          className={`wheel-highlight${compact ? " is-compact" : ""}`}
+          aria-hidden="true"
+        />
         <div
           ref={containerRef}
-          className="wheel-scroll"
+          className={`wheel-scroll${compact ? " is-compact" : ""}`}
           role="listbox"
           aria-label={ariaLabel}
           aria-activedescendant={`${pickerId}-${value}`}
@@ -137,7 +161,7 @@ export function WheelPicker({
         >
           <div
             className="wheel-spacer"
-            style={{ height: ROW_HEIGHT * (firstVisibleIndex + 1) }}
+            style={{ height: rowHeight * (firstVisibleIndex + centerOffset) }}
             aria-hidden="true"
           />
           {visibleValues.map((option, offset) => {
@@ -149,7 +173,7 @@ export function WheelPicker({
                 type="button"
                 role="option"
                 aria-selected={option === value}
-                className={`wheel-option${option === value ? " is-selected" : ""}`}
+                className={`wheel-option${compact ? " is-compact" : ""}${option === value ? " is-selected" : ""}`}
                 onClick={() => selectIndex(index)}
                 tabIndex={-1}
               >
@@ -159,7 +183,9 @@ export function WheelPicker({
           })}
           <div
             className="wheel-spacer"
-            style={{ height: ROW_HEIGHT * (values.length - endVisibleIndex + 1) }}
+            style={{
+              height: rowHeight * (values.length - endVisibleIndex + centerOffset),
+            }}
             aria-hidden="true"
           />
         </div>

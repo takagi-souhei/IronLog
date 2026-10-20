@@ -1,5 +1,5 @@
-import { GraphScreen } from "@/features/graphs/graph-screen";
+import { redirect } from "next/navigation";
 
 export default function GraphsPage() {
-  return <GraphScreen />;
+  redirect("/history");
 }

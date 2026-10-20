@@ -3,7 +3,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 interface BottomNavigationProps {
-  active: "record" | "history" | "graph" | "settings";
+  active: "record" | "history" | "settings";
   onNavigate?: (href: string) => Promise<boolean>;
 }
 
@@ -63,15 +63,6 @@ export function BottomNavigation({ active, onNavigate }: BottomNavigationProps) 
       >
         <span className="bottom-navigation-icon" aria-hidden="true">≡</span>
         <span>履歴</span>
-      </Link>
-      <Link
-        className={`bottom-navigation-link${active === "graph" ? " is-active" : ""}`}
-        href="/graphs"
-        aria-current={active === "graph" ? "page" : undefined}
-        onClick={(event) => void handleNavigation(event, "/graphs")}
-      >
-        <span className="bottom-navigation-icon" aria-hidden="true">⌁</span>
-        <span>グラフ</span>
       </Link>
       <Link
         className={`bottom-navigation-link${active === "settings" ? " is-active" : ""}`}
