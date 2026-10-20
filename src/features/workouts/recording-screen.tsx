@@ -16,14 +16,6 @@ import {
 import type { Exercise, Workout, WorkoutDraft, WorkoutExercise, WorkoutSet } from "@/types";
 import { prioritizeRecentlyUsedExercises, searchExercises } from "@/utils";
 
-const WEIGHT_VALUES = Array.from(
-  { length: WORKOUT_SET_LIMITS.maxWeight - WORKOUT_SET_LIMITS.minWeight + 1 },
-  (_, index) => index + WORKOUT_SET_LIMITS.minWeight,
-);
-const REP_VALUES = Array.from(
-  { length: WORKOUT_SET_LIMITS.maxReps - WORKOUT_SET_LIMITS.minReps + 1 },
-  (_, index) => index + WORKOUT_SET_LIMITS.minReps,
-);
 const DEFAULT_BODY_WEIGHT_VALUES = Array.from({ length: 341 }, (_, index) =>
   30 + index * 0.5,
 );
@@ -92,6 +84,7 @@ export function RecordingScreen() {
   const [selectedExerciseId, setSelectedExerciseId] = useState("");
   const [bodyWeight, setBodyWeight] = useState(30);
   const [hasPreviousBodyWeight, setHasPreviousBodyWeight] = useState(false);
+  const [isBodyWeightModalOpen, setIsBodyWeightModalOpen] = useState(false);
   const [previousWorkout, setPreviousWorkout] = useState<Workout>();
   const [isLoading, setIsLoading] = useState(true);
   const [draftReadyDate, setDraftReadyDate] = useState("");
@@ -244,13 +237,13 @@ export function RecordingScreen() {
   );
 
   useEffect(() => {
-    if (!isExercisePickerOpen) return;
+    if (!isExercisePickerOpen && !isBodyWeightModalOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [isExercisePickerOpen]);
+  }, [isBodyWeightModalOpen, isExercisePickerOpen]);
 
   const recentExercises = useMemo(
     () => prioritizeRecentlyUsedExercises(exercises, workouts.filter((workout) => workout.date <= date)),
@@ -297,18 +290,31 @@ export function RecordingScreen() {
     setNotice("前回トレーニングを読み込みました。保存はまだ行われていません。");
   }
 
-  function updateSet(
+  function adjustSet(
     workoutExerciseId: string,
     setId: string,
-    updates: Partial<Pick<WorkoutSet, "externalWeight" | "reps">>,
+    field: "externalWeight" | "reps",
+    amount: number,
   ) {
+    const min = field === "externalWeight"
+      ? WORKOUT_SET_LIMITS.minWeight
+      : WORKOUT_SET_LIMITS.minReps;
+    const max = field === "externalWeight"
+      ? WORKOUT_SET_LIMITS.maxWeight
+      : WORKOUT_SET_LIMITS.maxReps;
     setIsDirty(true);
     setWorkoutExercises((current) =>
       current.map((item) =>
         item.id === workoutExerciseId
           ? {
               ...item,
-              sets: item.sets.map((set) => (set.id === setId ? { ...set, ...updates } : set)),
+              sets: item.sets.map((set) => {
+                if (set.id !== setId) return set;
+                const nextValue = Math.min(max, Math.max(min, set[field] + amount));
+                return field === "externalWeight"
+                  ? { ...set, externalWeight: nextValue }
+                  : { ...set, reps: nextValue };
+              }),
             }
           : item,
       ),
@@ -459,32 +465,6 @@ export function RecordingScreen() {
       {error && <p className="feedback feedback-error" role="alert">{error}</p>}
       {notice && <p className="feedback feedback-success" role="status">{notice}</p>}
 
-      <details className="panel bodyweight-panel bodyweight-disclosure">
-        <summary className="bodyweight-summary">
-          <span>
-            <span className="eyebrow">BODY WEIGHT</span>
-            <strong>体重 {bodyWeight} kg</strong>
-          </span>
-          <span className="bodyweight-summary-action">変更</span>
-        </summary>
-        <WheelPicker
-          label="体重"
-          value={bodyWeight}
-          values={bodyWeightValues}
-          compact
-          formatValue={(value) => `${value} kg`}
-          onChange={(value) => {
-            setBodyWeight(value);
-            setIsDirty(true);
-          }}
-        />
-        <p className="helper-text">
-          {hasPreviousBodyWeight
-            ? "最新の体重記録を初期表示しています"
-            : "体重記録がないため、30 kgを初期値にしています"}
-        </p>
-      </details>
-
       <section className="section-title-row">
         <div>
           <p className="eyebrow">YOUR SESSION</p>
@@ -526,7 +506,6 @@ export function RecordingScreen() {
           {workoutExercises
             .filter((item) => item.exerciseId === selectedExerciseId)
             .map((item) => {
-            const previous = previousExercise(item.exerciseId);
             return (
               <article className="exercise-card" key={item.id}>
                 <div className="exercise-card-heading">
@@ -559,44 +538,51 @@ export function RecordingScreen() {
                   </button>
                 </div>
 
-                {previous && (
-                  <div className="previous-card">
-                    <span className="previous-label">前回</span>
-                    <span className="previous-values">
-                      {previous.sets
-                        .map((set) => `${set.externalWeight}×${set.reps}`)
-                        .join("　")}
-                    </span>
-                  </div>
-                )}
-
                 <div className="set-list">
                   {item.sets.map((set, index) => (
                     <div className="set-row" key={set.id}>
                       <span className="set-index">{String(index + 1).padStart(2, "0")}</span>
-                      <WheelPicker
-                        label="重量"
-                        ariaLabel={`${item.exerciseSnapshot.name} セット${index + 1} 重量`}
-                        value={set.externalWeight}
-                        values={WEIGHT_VALUES}
-                        compact
-                        quickSteps={[5, 10]}
-                        formatValue={(value) => `${value.toFixed(1)} kg`}
-                        onChange={(externalWeight) =>
-                          updateSet(item.id, set.id, { externalWeight })
-                        }
-                      />
+                      <div className="set-value-control">
+                        <output
+                          className="set-value"
+                          aria-label={`${item.exerciseSnapshot.name} セット${index + 1} 重量`}
+                        >
+                          {set.externalWeight}kg
+                        </output>
+                        <div className="set-step-buttons" aria-label="重量を変更">
+                          {[-10, -5, 5, 10].map((amount) => (
+                            <button
+                              type="button"
+                              key={amount}
+                              aria-label={`重量を${amount > 0 ? "増やす" : "減らす"} ${Math.abs(amount)}kg`}
+                              onClick={() => adjustSet(item.id, set.id, "externalWeight", amount)}
+                            >
+                              {amount > 0 ? `+${amount}` : amount}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <span className="multiply-sign">×</span>
-                      <WheelPicker
-                        label="回数"
-                        ariaLabel={`${item.exerciseSnapshot.name} セット${index + 1} 回数`}
-                        value={set.reps}
-                        values={REP_VALUES}
-                        compact
-                        quickSteps={[5, 10]}
-                        formatValue={(value) => `${value} 回`}
-                        onChange={(reps) => updateSet(item.id, set.id, { reps })}
-                      />
+                      <div className="set-value-control">
+                        <output
+                          className="set-value"
+                          aria-label={`${item.exerciseSnapshot.name} セット${index + 1} 回数`}
+                        >
+                          {set.reps}回
+                        </output>
+                        <div className="set-step-buttons" aria-label="回数を変更">
+                          {[-5, -1, 1, 5].map((amount) => (
+                            <button
+                              type="button"
+                              key={amount}
+                              aria-label={`回数を${amount > 0 ? "増やす" : "減らす"} ${Math.abs(amount)}回`}
+                              onClick={() => adjustSet(item.id, set.id, "reps", amount)}
+                            >
+                              {amount > 0 ? `+${amount}` : amount}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <button
                         className="remove-set-button"
                         type="button"
@@ -663,6 +649,15 @@ export function RecordingScreen() {
       )}
 
       <div className="save-bar">
+        <button
+          className="bodyweight-input-button"
+          type="button"
+          disabled={isLoading || isSaving}
+          onClick={() => setIsBodyWeightModalOpen(true)}
+        >
+          <span className="bodyweight-input-label">体重を入力</span>
+          <strong>{bodyWeight}kg</strong>
+        </button>
         {workoutId && (
           <button
             className="delete-workout-button"
@@ -689,6 +684,73 @@ export function RecordingScreen() {
           {!isSaving && <span aria-hidden="true">→</span>}
         </button>
       </div>
+
+      {isBodyWeightModalOpen && (
+        <div
+          className="sheet-backdrop bodyweight-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setIsBodyWeightModalOpen(false);
+          }}
+        >
+          <section
+            className="bodyweight-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bodyweight-sheet-title"
+          >
+            <div className="sheet-handle" />
+            <div className="sheet-heading">
+              <div>
+                <p className="eyebrow">BODY WEIGHT</p>
+                <h2 id="bodyweight-sheet-title">体重を入力</h2>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="閉じる"
+                onClick={() => setIsBodyWeightModalOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <WheelPicker
+              label="体重"
+              value={bodyWeight}
+              values={bodyWeightValues}
+              formatValue={(value) => `${value} kg`}
+              onChange={(value) => {
+                setBodyWeight(value);
+                setIsDirty(true);
+              }}
+            />
+            <p className="helper-text bodyweight-helper">
+              {hasPreviousBodyWeight
+                ? "最新の体重記録を初期表示しています"
+                : "体重記録がないため、30 kgを初期値にしています"}
+            </p>
+            <div className="bodyweight-modal-actions">
+              <button
+                className="bodyweight-cancel-button"
+                type="button"
+                onClick={() => setIsBodyWeightModalOpen(false)}
+              >
+                キャンセル
+              </button>
+              <button
+                className="bodyweight-save-button"
+                type="button"
+                disabled={isSaving}
+                onClick={async () => {
+                  if (await handleSave()) setIsBodyWeightModalOpen(false);
+                }}
+              >
+                保存
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {isExercisePickerOpen && (
         <div

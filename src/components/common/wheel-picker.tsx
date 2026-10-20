@@ -3,7 +3,7 @@
 import { useEffect, useId, useLayoutEffect, useRef } from "react";
 
 const STANDARD_ROW_HEIGHT = 44;
-const STANDARD_VISIBLE_ROWS = 11;
+const STANDARD_VISIBLE_ROWS = 5;
 const STANDARD_OVERSCAN_ROWS = 4;
 const COMPACT_ROW_HEIGHT = 16;
 const COMPACT_VISIBLE_ROWS = 3;
