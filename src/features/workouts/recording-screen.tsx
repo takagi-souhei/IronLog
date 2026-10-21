@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BottomNavigation } from "@/components/common/bottom-navigation";
-import { WheelPicker } from "@/components/common/wheel-picker";
 import { WORKOUT_SET_LIMITS } from "@/constants/training";
 import {
   addExercise,
@@ -15,9 +14,6 @@ import {
 import type { Exercise, Workout, WorkoutDraft, WorkoutExercise, WorkoutSet } from "@/types";
 import { prioritizeRecentlyUsedExercises, searchExercises } from "@/utils";
 
-const DEFAULT_BODY_WEIGHT_VALUES = Array.from({ length: 341 }, (_, index) =>
-  30 + index * 0.5,
-);
 const inMemoryWorkoutDrafts = new Map<string, WorkoutDraft>();
 
 function roundToHalfKilogram(weight: number): number {
@@ -83,6 +79,8 @@ export function RecordingScreen() {
   const [workoutExercises, setWorkoutExercises] = useState<WorkoutExercise[]>([]);
   const [selectedExerciseId, setSelectedExerciseId] = useState("");
   const [bodyWeight, setBodyWeight] = useState(30);
+  const [bodyWeightInput, setBodyWeightInput] = useState("30");
+  const [bodyWeightInputError, setBodyWeightInputError] = useState<string>();
   const [hasPreviousBodyWeight, setHasPreviousBodyWeight] = useState(false);
   const [isBodyWeightModalOpen, setIsBodyWeightModalOpen] = useState(false);
   const [isPastWorkoutModalOpen, setIsPastWorkoutModalOpen] = useState(false);
@@ -98,12 +96,7 @@ export function RecordingScreen() {
   const [isAddingExercise, setIsAddingExercise] = useState(false);
   const [newExerciseName, setNewExerciseName] = useState("");
   const [newExerciseCategory, setNewExerciseCategory] = useState("胸");
-  const bodyWeightValues = useMemo(
-    () =>
-      [...new Set([...DEFAULT_BODY_WEIGHT_VALUES, roundToHalfKilogram(bodyWeight)])]
-        .sort((a, b) => a - b),
-    [bodyWeight],
-  );
+  const bodyWeightInputRef = useRef<HTMLInputElement>(null);
   const shouldPersistDraftRef = useRef(false);
   const draftSnapshotRef = useRef<WorkoutDraft | undefined>(undefined);
 
@@ -206,6 +199,29 @@ export function RecordingScreen() {
     [date, workouts],
   );
   const selectedPastWorkout = pastWorkouts[selectedPastWorkoutIndex];
+
+  function openBodyWeightModal() {
+    setBodyWeightInput(String(bodyWeight));
+    setBodyWeightInputError(undefined);
+    setIsBodyWeightModalOpen(true);
+  }
+
+  function applyBodyWeightInput() {
+    const input = bodyWeightInputRef.current;
+    if (!input?.validity.valid) {
+      setBodyWeightInputError(
+        input?.validity.stepMismatch
+          ? "体重は0.5kg刻みで入力してください。"
+          : "体重は0より大きい数値を入力してください。",
+      );
+      input?.reportValidity();
+      return;
+    }
+
+    setBodyWeight(roundToHalfKilogram(Number(bodyWeightInput)));
+    setIsDirty(true);
+    setIsBodyWeightModalOpen(false);
+  }
 
   function previousExercise(exerciseId: string): WorkoutExercise | undefined {
     return workouts
@@ -591,7 +607,7 @@ export function RecordingScreen() {
           className="bodyweight-input-button"
           type="button"
           disabled={isLoading || isSaving}
-          onClick={() => setIsBodyWeightModalOpen(true)}
+          onClick={openBodyWeightModal}
         >
           <span className="bodyweight-input-label">体重を入力</span>
           <strong>{bodyWeight}kg</strong>
@@ -652,16 +668,32 @@ export function RecordingScreen() {
                 ×
               </button>
             </div>
-            <WheelPicker
-              label="体重"
-              value={bodyWeight}
-              values={bodyWeightValues}
-              formatValue={(value) => `${value} kg`}
-              onChange={(value) => {
-                setBodyWeight(value);
-                setIsDirty(true);
-              }}
-            />
+            <label className="bodyweight-keyboard-field">
+              体重（kg）
+              <input
+                ref={bodyWeightInputRef}
+                type="number"
+                inputMode="decimal"
+                min="0.5"
+                step="0.5"
+                required
+                value={bodyWeightInput}
+                aria-label="体重（kg）"
+                aria-invalid={bodyWeightInputError !== undefined}
+                aria-describedby={
+                  bodyWeightInputError ? "bodyweight-input-error" : undefined
+                }
+                onChange={(event) => {
+                  setBodyWeightInput(event.target.value);
+                  setBodyWeightInputError(undefined);
+                }}
+              />
+            </label>
+            {bodyWeightInputError && (
+              <p className="feedback feedback-error" id="bodyweight-input-error" role="alert">
+                {bodyWeightInputError}
+              </p>
+            )}
             <p className="helper-text bodyweight-helper">
               {hasPreviousBodyWeight
                 ? "最新の体重記録を初期表示しています"
@@ -678,7 +710,7 @@ export function RecordingScreen() {
               <button
                 className="bodyweight-save-button"
                 type="button"
-                onClick={() => setIsBodyWeightModalOpen(false)}
+                onClick={applyBodyWeightInput}
               >
                 入力を反映
               </button>

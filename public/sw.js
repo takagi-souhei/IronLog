@@ -1,4 +1,4 @@
-const CACHE_NAME = "ironlog-pwa-v3";
+const CACHE_NAME = "ironlog-pwa-v4";
 const APP_SHELL = ["/", "/history", "/settings"];
 
 self.addEventListener("install", (event) => {
@@ -9,7 +9,6 @@ self.addEventListener("install", (event) => {
         cache.addAll([
           ...APP_SHELL,
           "/manifest.json",
-          "/icon.svg",
           "/icon-192.png",
           "/icon-512.png",
           "/icon-maskable-512.png",
@@ -72,7 +71,6 @@ self.addEventListener("fetch", (event) => {
     requestUrl.pathname.startsWith("/_next/static/") ||
     requestUrl.pathname === "/manifest.json" ||
     requestUrl.pathname.startsWith("/icon-") ||
-    requestUrl.pathname === "/icon.svg" ||
     requestUrl.pathname === "/apple-touch-icon.png"
   ) {
     event.respondWith((async () => {

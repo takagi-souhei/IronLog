@@ -965,16 +965,32 @@ button {
   justify-content: space-between;
 }
 
-.bodyweight-sheet .wheel-option {
-  font-size: 17px;
+.bodyweight-keyboard-field {
+  display: grid;
+  gap: 8px;
+  margin-top: 22px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.bodyweight-sheet .wheel-option.is-selected {
-  font-size: 22px;
+.bodyweight-keyboard-field input {
+  width: 100%;
+  min-height: 72px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 8px 16px;
+  color: var(--ink);
+  background: #fff;
+  font-family: "DM Mono", "Noto Sans JP", sans-serif;
+  font-size: 34px;
+  font-weight: 700;
+  text-align: center;
 }
 
 .bodyweight-helper {
   display: block;
+  margin-top: 10px;
   text-align: center;
 }
 
