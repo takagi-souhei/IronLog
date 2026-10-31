@@ -98,6 +98,8 @@ export function RecordingScreen() {
   const [workoutId, setWorkoutId] = useState<string>();
   const [workoutExercises, setWorkoutExercises] = useState<WorkoutExercise[]>([]);
   const [selectedExerciseId, setSelectedExerciseId] = useState("");
+  const [editingWeightSetId, setEditingWeightSetId] = useState<string>();
+  const [weightInputValue, setWeightInputValue] = useState("");
   const [bodyWeight, setBodyWeight] = useState(30);
   const [bodyWeightInput, setBodyWeightInput] = useState("30");
   const [bodyWeightInputError, setBodyWeightInputError] = useState<string>();
@@ -310,6 +312,30 @@ export function RecordingScreen() {
             }
           : item,
       ),
+    );
+  }
+
+  function updateSetWeight(setId: string, value: string) {
+    setWeightInputValue(value);
+    if (value.trim() === "") return;
+
+    const weight = Number(value);
+    if (
+      !Number.isFinite(weight) ||
+      weight < WORKOUT_SET_LIMITS.minWeight ||
+      weight > WORKOUT_SET_LIMITS.maxWeight
+    ) {
+      return;
+    }
+
+    setIsDirty(true);
+    setWorkoutExercises((current) =>
+      current.map((item) => ({
+        ...item,
+        sets: item.sets.map((set) =>
+          set.id === setId ? { ...set, externalWeight: weight } : set,
+        ),
+      })),
     );
   }
 
@@ -575,12 +601,40 @@ export function RecordingScreen() {
                         <div className="set-row">
                           <span className="set-index">{String(index + 1).padStart(2, "0")}</span>
                           <div className="set-value-control">
-                            <output
-                              className="set-value"
-                              aria-label={`${item.exerciseSnapshot.name} セット${index + 1} 重量`}
-                            >
-                              {set.externalWeight}kg
-                            </output>
+                            {editingWeightSetId === set.id ? (
+                              <input
+                                className="set-value-input"
+                                type="number"
+                                inputMode="decimal"
+                                min={WORKOUT_SET_LIMITS.minWeight}
+                                max={WORKOUT_SET_LIMITS.maxWeight}
+                                step="any"
+                                value={weightInputValue}
+                                autoFocus
+                                aria-label={`${item.exerciseSnapshot.name} セット${index + 1} 重量（kg）`}
+                                onChange={(event) =>
+                                  updateSetWeight(set.id, event.target.value)
+                                }
+                                onBlur={() => setEditingWeightSetId(undefined)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.currentTarget.blur();
+                                  }
+                                }}
+                              />
+                            ) : (
+                              <button
+                                className="set-value set-weight-button"
+                                type="button"
+                                aria-label={`${item.exerciseSnapshot.name} セット${index + 1} 重量を入力`}
+                                onClick={() => {
+                                  setWeightInputValue(String(set.externalWeight));
+                                  setEditingWeightSetId(set.id);
+                                }}
+                              >
+                                {set.externalWeight}kg
+                              </button>
+                            )}
                             <div className="set-step-buttons" aria-label="重量を変更">
                               {[-10, -5, 5, 10].map((amount) => (
                                 <button
