@@ -716,6 +716,21 @@ button {
   letter-spacing: -0.035em;
 }
 
+.exercise-strength-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 5px;
+  margin-top: 3px;
+  color: #647568;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.exercise-strength-summary strong {
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
 .category-label {
   color: #64836d;
   font-family: "DM Mono", "Noto Sans JP", sans-serif;
@@ -740,14 +755,29 @@ button {
   display: grid;
 }
 
+.set-entry {
+  border-bottom: 1px solid #eff2ed;
+}
+
 .set-row {
   display: grid;
   grid-template-columns: 16px minmax(0, 1.15fr) 12px minmax(0, .9fr) 34px;
   align-items: center;
   gap: 4px;
   min-width: 0;
-  border-bottom: 1px solid #eff2ed;
   padding: 0;
+}
+
+.set-strength-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 10px;
+  margin: 0 0 4px 20px;
+  color: #647568;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
 }
 
 .set-index {

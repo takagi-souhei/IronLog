@@ -12,9 +12,29 @@ import {
   saveWorkoutRecording,
 } from "@/services/workout-recording-service";
 import type { Exercise, Workout, WorkoutDraft, WorkoutExercise, WorkoutSet } from "@/types";
-import { prioritizeRecentlyUsedExercises, searchExercises } from "@/utils";
+import {
+  effectiveWeight,
+  estimateOneRepMax,
+  prioritizeRecentlyUsedExercises,
+  searchExercises,
+} from "@/utils";
 
 const inMemoryWorkoutDrafts = new Map<string, WorkoutDraft>();
+
+function formatWeight(weight: number): string {
+  return `${Number(weight.toFixed(1))}kg`;
+}
+
+function suggestedRepRange(rmPercentage: number): string {
+  if (rmPercentage >= 95) return "1〜2回";
+  if (rmPercentage >= 90) return "2〜4回";
+  if (rmPercentage >= 85) return "4〜6回";
+  if (rmPercentage >= 80) return "6〜8回";
+  if (rmPercentage >= 75) return "8〜10回";
+  if (rmPercentage >= 70) return "10〜12回";
+  if (rmPercentage >= 65) return "12〜15回";
+  return "15回以上";
+}
 
 function roundToHalfKilogram(weight: number): number {
   return Math.round(weight * 2) / 2;
@@ -479,6 +499,21 @@ export function RecordingScreen() {
           {workoutExercises
             .filter((item) => item.exerciseId === selectedExerciseId)
             .map((item) => {
+            const bodyweightRatio = item.exerciseSnapshot.bodyweightRatio;
+            const effectiveWeights = item.sets.map((set) =>
+              effectiveWeight(set, item.exerciseSnapshot, bodyWeight),
+            );
+            const estimatedOneRepMax = item.sets.reduce<number | null>(
+              (maximum, set, index) => {
+                const load = effectiveWeights[index];
+                if (load === null) return maximum;
+                const estimate = estimateOneRepMax(load, set.reps);
+                return estimate !== null && (maximum === null || estimate > maximum)
+                  ? estimate
+                  : maximum;
+              },
+              null,
+            );
             return (
               <article className="exercise-card" key={item.id}>
                 <div className="exercise-card-heading">
@@ -488,6 +523,23 @@ export function RecordingScreen() {
                     {item.exerciseSnapshot.weightUnit === "per-hand" && (
                       <span className="helper-text">片手あたり</span>
                     )}
+                    <div className="exercise-strength-summary">
+                      <strong>
+                        推定1RM:{" "}
+                        {estimatedOneRepMax === null
+                          ? "—"
+                          : formatWeight(estimatedOneRepMax)}
+                      </strong>
+                      {bodyweightRatio > 0 && estimatedOneRepMax !== null && (
+                        <span>
+                          （加重換算{" "}
+                          {estimatedOneRepMax - bodyWeight * bodyweightRatio > 0 ? "+" : ""}
+                          {formatWeight(
+                            estimatedOneRepMax - bodyWeight * bodyweightRatio,
+                          )}）
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <button
                     className="icon-button"
@@ -512,69 +564,89 @@ export function RecordingScreen() {
                 </div>
 
                 <div className="set-list">
-                  {item.sets.map((set, index) => (
-                    <div className="set-row" key={set.id}>
-                      <span className="set-index">{String(index + 1).padStart(2, "0")}</span>
-                      <div className="set-value-control">
-                        <output
-                          className="set-value"
-                          aria-label={`${item.exerciseSnapshot.name} セット${index + 1} 重量`}
-                        >
-                          {set.externalWeight}kg
-                        </output>
-                        <div className="set-step-buttons" aria-label="重量を変更">
-                          {[-10, -5, 5, 10].map((amount) => (
-                            <button
-                              type="button"
-                              key={amount}
-                              aria-label={`重量を${amount > 0 ? "増やす" : "減らす"} ${Math.abs(amount)}kg`}
-                              onClick={() => adjustSet(item.id, set.id, "externalWeight", amount)}
+                  {item.sets.map((set, index) => {
+                    const effectiveLoad = effectiveWeights[index];
+                    const rmPercentage =
+                      estimatedOneRepMax !== null && effectiveLoad !== null
+                        ? (effectiveLoad / estimatedOneRepMax) * 100
+                        : null;
+                    return (
+                      <div className="set-entry" key={set.id}>
+                        <div className="set-row">
+                          <span className="set-index">{String(index + 1).padStart(2, "0")}</span>
+                          <div className="set-value-control">
+                            <output
+                              className="set-value"
+                              aria-label={`${item.exerciseSnapshot.name} セット${index + 1} 重量`}
                             >
-                              {amount > 0 ? `+${amount}` : amount}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <span className="multiply-sign">×</span>
-                      <div className="set-value-control">
-                        <output
-                          className="set-value"
-                          aria-label={`${item.exerciseSnapshot.name} セット${index + 1} 回数`}
-                        >
-                          {set.reps}回
-                        </output>
-                        <div className="set-step-buttons" aria-label="回数を変更">
-                          {[-5, -1, 1, 5].map((amount) => (
-                            <button
-                              type="button"
-                              key={amount}
-                              aria-label={`回数を${amount > 0 ? "増やす" : "減らす"} ${Math.abs(amount)}回`}
-                              onClick={() => adjustSet(item.id, set.id, "reps", amount)}
+                              {set.externalWeight}kg
+                            </output>
+                            <div className="set-step-buttons" aria-label="重量を変更">
+                              {[-10, -5, 5, 10].map((amount) => (
+                                <button
+                                  type="button"
+                                  key={amount}
+                                  aria-label={`重量を${amount > 0 ? "増やす" : "減らす"} ${Math.abs(amount)}kg`}
+                                  onClick={() => adjustSet(item.id, set.id, "externalWeight", amount)}
+                                >
+                                  {amount > 0 ? `+${amount}` : amount}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <span className="multiply-sign">×</span>
+                          <div className="set-value-control">
+                            <output
+                              className="set-value"
+                              aria-label={`${item.exerciseSnapshot.name} セット${index + 1} 回数`}
                             >
-                              {amount > 0 ? `+${amount}` : amount}
-                            </button>
-                          ))}
+                              {set.reps}回
+                            </output>
+                            <div className="set-step-buttons" aria-label="回数を変更">
+                              {[-5, -1, 1, 5].map((amount) => (
+                                <button
+                                  type="button"
+                                  key={amount}
+                                  aria-label={`回数を${amount > 0 ? "増やす" : "減らす"} ${Math.abs(amount)}回`}
+                                  onClick={() => adjustSet(item.id, set.id, "reps", amount)}
+                                >
+                                  {amount > 0 ? `+${amount}` : amount}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <button
+                            className="remove-set-button"
+                            type="button"
+                            aria-label={`${item.exerciseSnapshot.name} セット${index + 1}を削除`}
+                            onClick={() => {
+                              setIsDirty(true);
+                              setWorkoutExercises((current) =>
+                                current.map((entry) =>
+                                  entry.id === item.id
+                                    ? { ...entry, sets: entry.sets.filter((row) => row.id !== set.id) }
+                                    : entry,
+                                ),
+                              )
+                            }}
+                          >
+                            −
+                          </button>
                         </div>
+                        <p className="set-strength-info">
+                          {bodyweightRatio > 0 && effectiveLoad !== null && (
+                            <span>実効重量 {formatWeight(effectiveLoad)}</span>
+                          )}
+                          <span>
+                            RM {rmPercentage === null ? "—" : `${Math.round(rmPercentage)}%`}
+                          </span>
+                          <span>
+                            目安 {rmPercentage === null ? "—" : suggestedRepRange(rmPercentage)}
+                          </span>
+                        </p>
                       </div>
-                      <button
-                        className="remove-set-button"
-                        type="button"
-                        aria-label={`${item.exerciseSnapshot.name} セット${index + 1}を削除`}
-                        onClick={() => {
-                          setIsDirty(true);
-                          setWorkoutExercises((current) =>
-                            current.map((entry) =>
-                              entry.id === item.id
-                                ? { ...entry, sets: entry.sets.filter((row) => row.id !== set.id) }
-                                : entry,
-                            ),
-                          )
-                        }}
-                      >
-                        −
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <button
                   className="add-set-button"
