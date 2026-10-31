@@ -11,13 +11,21 @@ import {
   loadWorkoutRecordingData,
   saveWorkoutRecording,
 } from "@/services/workout-recording-service";
-import type { Exercise, Workout, WorkoutDraft, WorkoutExercise, WorkoutSet } from "@/types";
+import type {
+  BodyWeightRecord,
+  Exercise,
+  Workout,
+  WorkoutDraft,
+  WorkoutExercise,
+  WorkoutSet,
+} from "@/types";
 import {
   effectiveWeight,
   estimateOneRepMax,
   prioritizeRecentlyUsedExercises,
   searchExercises,
 } from "@/utils";
+import { createBodyWeightIndex } from "@/utils/body-weight";
 
 const inMemoryWorkoutDrafts = new Map<string, WorkoutDraft>();
 
@@ -95,6 +103,7 @@ export function RecordingScreen() {
   const [date, setDate] = useState(localDateString);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const [bodyWeightRecords, setBodyWeightRecords] = useState<BodyWeightRecord[]>([]);
   const [workoutId, setWorkoutId] = useState<string>();
   const [workoutExercises, setWorkoutExercises] = useState<WorkoutExercise[]>([]);
   const [selectedExerciseId, setSelectedExerciseId] = useState("");
@@ -146,6 +155,7 @@ export function RecordingScreen() {
           matchingDraft?.exercises ?? data.workoutForDate?.exercises ?? [];
         setExercises(data.exercises);
         setWorkouts(data.workouts);
+        setBodyWeightRecords(data.bodyWeightRecords);
         setWorkoutId(matchingDraft?.workoutId ?? data.workoutForDate?.id);
         setWorkoutExercises(loadedWorkoutExercises);
         setSelectedExerciseId(loadedWorkoutExercises[0]?.exerciseId ?? "");
@@ -220,6 +230,36 @@ export function RecordingScreen() {
       .sort((a, b) => b.date.localeCompare(a.date)),
     [date, workouts],
   );
+  const historicalOneRepMaxByExercise = useMemo(() => {
+    const bodyWeightIndex = createBodyWeightIndex(bodyWeightRecords);
+    const estimates = new Map<string, number>();
+
+    for (const workout of workouts) {
+      if (workout.date >= date) continue;
+
+      const historicalBodyWeight = bodyWeightIndex.getOnOrBefore(workout.date)?.weight;
+      for (const exercise of workout.exercises) {
+        for (const set of exercise.sets) {
+          const load = effectiveWeight(
+            set,
+            exercise.exerciseSnapshot,
+            historicalBodyWeight,
+          );
+          if (load === null) continue;
+
+          const estimate = estimateOneRepMax(load, set.reps);
+          if (
+            estimate !== null &&
+            estimate > (estimates.get(exercise.exerciseId) ?? 0)
+          ) {
+            estimates.set(exercise.exerciseId, estimate);
+          }
+        }
+      }
+    }
+
+    return estimates;
+  }, [bodyWeightRecords, date, workouts]);
   const selectedPastWorkout = pastWorkouts[selectedPastWorkoutIndex];
 
   function openBodyWeightModal() {
@@ -376,6 +416,7 @@ export function RecordingScreen() {
         setIsDirty(false);
         const data = await loadWorkoutRecordingData(date);
         setWorkouts(data.workouts);
+        setBodyWeightRecords(data.bodyWeightRecords);
         return true;
       }
 
@@ -393,6 +434,7 @@ export function RecordingScreen() {
       const data = await loadWorkoutRecordingData(date);
       setExercises(data.exercises);
       setWorkouts(data.workouts);
+      setBodyWeightRecords(data.bodyWeightRecords);
       return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "保存できませんでした。");
@@ -417,6 +459,7 @@ export function RecordingScreen() {
       setNotice("トレーニング記録を削除しました。体重記録は保持されています。");
       const data = await loadWorkoutRecordingData(date);
       setWorkouts(data.workouts);
+      setBodyWeightRecords(data.bodyWeightRecords);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "削除できませんでした。");
     } finally {
@@ -526,19 +569,10 @@ export function RecordingScreen() {
             .filter((item) => item.exerciseId === selectedExerciseId)
             .map((item) => {
             const bodyweightRatio = item.exerciseSnapshot.bodyweightRatio;
+            const estimatedOneRepMax =
+              historicalOneRepMaxByExercise.get(item.exerciseId) ?? null;
             const effectiveWeights = item.sets.map((set) =>
               effectiveWeight(set, item.exerciseSnapshot, bodyWeight),
-            );
-            const estimatedOneRepMax = item.sets.reduce<number | null>(
-              (maximum, set, index) => {
-                const load = effectiveWeights[index];
-                if (load === null) return maximum;
-                const estimate = estimateOneRepMax(load, set.reps);
-                return estimate !== null && (maximum === null || estimate > maximum)
-                  ? estimate
-                  : maximum;
-              },
-              null,
             );
             return (
               <article className="exercise-card" key={item.id}>
