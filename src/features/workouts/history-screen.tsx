@@ -348,10 +348,10 @@ export function HistoryScreen() {
               <button
                 className="review-day-button"
                 type="button"
-                aria-label="次のトレーニング"
-                title="次のトレーニング"
-                disabled={!hasNewerTraining}
-                onClick={() => moveTraining("newer")}
+                aria-label="前のトレーニング"
+                title="前のトレーニング"
+                disabled={!hasOlderTraining}
+                onClick={() => moveTraining("older")}
               >
                 ＜
               </button>
@@ -364,10 +364,10 @@ export function HistoryScreen() {
               <button
                 className="review-day-button"
                 type="button"
-                aria-label="前のトレーニング"
-                title="前のトレーニング"
-                disabled={!hasOlderTraining}
-                onClick={() => moveTraining("older")}
+                aria-label="次のトレーニング"
+                title="次のトレーニング"
+                disabled={!hasNewerTraining}
+                onClick={() => moveTraining("newer")}
               >
                 ＞
               </button>

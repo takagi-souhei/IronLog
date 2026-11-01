@@ -47,7 +47,6 @@ function isWorkoutSet(value: unknown): value is WorkoutSet {
     set.reps >= WORKOUT_SET_LIMITS.minReps &&
     set.reps <= WORKOUT_SET_LIMITS.maxReps &&
     isFiniteNumber(set.externalWeight) &&
-    Number.isInteger(set.externalWeight) &&
     set.externalWeight >= WORKOUT_SET_LIMITS.minWeight &&
     set.externalWeight <= WORKOUT_SET_LIMITS.maxWeight
   );

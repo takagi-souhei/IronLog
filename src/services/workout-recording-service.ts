@@ -57,13 +57,13 @@ export async function saveWorkoutRecording(
             !Number.isInteger(set.reps) ||
             set.reps < WORKOUT_SET_LIMITS.minReps ||
             set.reps > WORKOUT_SET_LIMITS.maxReps ||
-            !Number.isInteger(set.externalWeight) ||
+            !Number.isFinite(set.externalWeight) ||
             set.externalWeight < WORKOUT_SET_LIMITS.minWeight ||
             set.externalWeight > WORKOUT_SET_LIMITS.maxWeight,
         ),
     )
   ) {
-    throw new RangeError("各種目に有効なセット（重量 −100〜300 kg、回数1〜30）を設定してください。");
+    throw new RangeError("各種目に有効なセット（重量 −100〜300 kg、小数可、回数1〜30）を設定してください。");
   }
 
   await saveWorkoutSession(

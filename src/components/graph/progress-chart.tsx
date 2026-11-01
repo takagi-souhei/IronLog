@@ -38,7 +38,7 @@ export function ProgressChart({
       <ResponsiveContainer width="100%" height="100%">
         <LineChart
           data={[...points]}
-          margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+          margin={{ top: 10, right: 10, left: 4, bottom: 0 }}
           onClick={(state) => {
             const point = state?.activePayload?.[0]?.payload;
             if (point && typeof point.date === "string") {
@@ -65,7 +65,7 @@ export function ProgressChart({
             axisLine={false}
             tickLine={false}
             tickFormatter={(value: number) => `${value}`}
-            width={34}
+            width={42}
           />
           <ReferenceLine y={0} stroke="#dce5da" />
           {points.some((point) => point.date === selectedDate) && (
