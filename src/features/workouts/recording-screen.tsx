@@ -520,7 +520,7 @@ export function RecordingScreen() {
           <h2>種目とセット</h2>
         </div>
         <span className={`save-state${isDirty ? " is-dirty" : ""}`} role="status">
-          {isDirty ? "💾 保存する" : "✅ 保存済み"}
+          {isDirty ? "💾 未保存" : "✅ 保存済み"}
         </span>
       </section>
       <div className="record-actions">
@@ -740,7 +740,7 @@ export function RecordingScreen() {
                           </span>
                           {canUpdateOneRepMax && setEstimatedOneRepMax !== null && (
                             <span className="set-rm-update" role="status">
-                              推定1RM更新候補 {formatWeight(setEstimatedOneRepMax)}
+                              1RM更新👏 {formatWeight(setEstimatedOneRepMax)}
                             </span>
                           )}
                         </p>
