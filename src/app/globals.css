@@ -780,6 +780,11 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.set-rm-update {
+  color: #236742;
+  font-weight: 700;
+}
+
 .set-index {
   color: #a0aaa1;
   font-family: "DM Mono", monospace;

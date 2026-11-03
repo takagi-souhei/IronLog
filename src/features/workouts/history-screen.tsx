@@ -129,7 +129,7 @@ export function HistoryScreen() {
   });
   const [selectedTab, setSelectedTab] = useState(BODY_WEIGHT_TAB);
   const [selectedDate, setSelectedDate] = useState(localDateString);
-  const [metric, setMetric] = useState<GraphMetric>("maxWeight");
+  const [metric, setMetric] = useState<GraphMetric>("estimatedOneRepMax");
   const [period, setPeriod] = useState<GraphPeriod>("all");
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string>();

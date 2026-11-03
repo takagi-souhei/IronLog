@@ -626,6 +626,13 @@ export function RecordingScreen() {
                 <div className="set-list">
                   {item.sets.map((set, index) => {
                     const effectiveLoad = effectiveWeights[index];
+                    const setEstimatedOneRepMax =
+                      effectiveLoad === null
+                        ? null
+                        : estimateOneRepMax(effectiveLoad, set.reps);
+                    const canUpdateOneRepMax =
+                      setEstimatedOneRepMax !== null &&
+                      setEstimatedOneRepMax > (estimatedOneRepMax ?? 0);
                     const rmPercentage =
                       estimatedOneRepMax !== null && effectiveLoad !== null
                         ? (effectiveLoad / estimatedOneRepMax) * 100
@@ -731,6 +738,11 @@ export function RecordingScreen() {
                           <span>
                             目安 {rmPercentage === null ? "—" : suggestedRepRange(rmPercentage)}
                           </span>
+                          {canUpdateOneRepMax && setEstimatedOneRepMax !== null && (
+                            <span className="set-rm-update" role="status">
+                              推定1RM更新候補 {formatWeight(setEstimatedOneRepMax)}
+                            </span>
+                          )}
                         </p>
                       </div>
                     );
